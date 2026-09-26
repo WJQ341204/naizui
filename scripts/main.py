@@ -1031,7 +1031,8 @@ def find_ffmpeg() -> str:
     # 也尝试在 PATH 中查找
     try:
         import subprocess
-        result = subprocess.run(["where", "ffmpeg"], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(["where", "ffmpeg"], capture_output=True, text=True,
+                                errors="replace", timeout=5)
         if result.returncode == 0:
             paths = result.stdout.strip().split("\n")
             common_paths = paths + common_paths

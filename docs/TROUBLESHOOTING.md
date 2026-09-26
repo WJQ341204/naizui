@@ -126,9 +126,23 @@ set CODEBUDDY_SAFE_DELETE_ENABLED=0
 
 系统代理残留（Clash 没开）。`set HTTP_PROXY=` / `set HTTPS_PROXY=` 清空。
 
-### 16. Windows 下 ffprobe 抛 `UnicodeDecodeError`
+### 16. Windows 下 ffprobe 抛 `UnicodeDecodeError`（✅ 已修复）
 
-**根因**：读取 ffprobe 的 **GBK** 输出时按 utf-8 解码，发生在子进程 reader 线程，**不影响结果**（只是日志噪音）。
+**根因**：`subprocess.run(..., text=True)` 让 Python 按本地编码（中文 Windows = cp936/GBK）解码子进程输出，ffprobe 实为 UTF-8 字节 → 编码不匹配，在**子进程 reader 线程**抛 `UnicodeDecodeError`（外层 `try/except` 拦不住，导致音频时长误判为 `0.0`）。
+
+**解法**（已落地）：字节捕获 + 多编码回退
+
+```python
+def _safe_decode(raw):
+    for enc in ("utf-8", "gbk", "cp936", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+```
+
+其余 `subprocess.run(..., text=True)` 一律补 `errors="replace"` 兜底。详见 [`README_问题复盘.md`](../README_问题复盘.md)「P17 修复方案」。
 
 ### 17. QA 阶段全部场景失败并连环重跑
 

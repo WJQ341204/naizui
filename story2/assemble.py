@@ -66,7 +66,7 @@ def get_duration(path):
     try:
         r = subprocess.run([FFP, "-v", "error", "-show_entries", "format=duration",
                             "-of", "default=noprint_wrappers=1:nokey=1", path],
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, errors="replace", timeout=30)
         if r.returncode == 0 and r.stdout.strip():
             return float(r.stdout.strip())
     except Exception:
@@ -78,7 +78,7 @@ def get_audio_duration(path):
     try:
         r = subprocess.run([FFP, "-v", "error", "-show_entries", "format=duration",
                             "-of", "default=noprint_wrappers=1:nokey=1", path],
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, errors="replace", timeout=30)
         if r.returncode == 0:
             return float(r.stdout.strip())
     except:
@@ -104,7 +104,7 @@ def burn_ass_subtitles(video_path, ass_rel, font_rel, output_path):
         output_path
     ]
     log(f"  burn_ass: {os.path.basename(output_path)}")
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=300)
     if r.returncode != 0:
         stderr = r.stderr.strip()[-300:] if r.stderr else "none"
         log(f"  burn_ass ERROR: {stderr}")
@@ -157,7 +157,7 @@ def has_audio(path):
     try:
         r = subprocess.run([FFP, "-v", "error", "-select_streams", "a",
                             "-show_entries", "stream=index", "-of", "csv=p=0", path],
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, errors="replace", timeout=30)
         return bool(r.stdout.strip())
     except:
         return False
@@ -211,7 +211,7 @@ def stretch_video_to_duration(src, dest, target_dur):
                "-c:v", "libx264", "-crf", "22", "-preset", "medium",
                "-pix_fmt", "yuv420p",
                dest]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=600)
     if r.returncode != 0:
         log(f"  stretch ERROR: {r.stderr[-200:] if r.stderr else 'none'}")
         shutil.copy2(src, dest)  # fallback
@@ -251,7 +251,7 @@ def apply_lip_sync(video_path, audio_path, result_dir, result_name="scene_lipsyn
            "--version", "v15"]
     log(f"  lipsync: {os.path.basename(video_path)} + {os.path.basename(audio_path)}")
     try:
-        r = subprocess.run(cmd, cwd=MUSE_DIR, env=env, capture_output=True, text=True, timeout=MUSE_TIMEOUT)
+        r = subprocess.run(cmd, cwd=MUSE_DIR, env=env, capture_output=True, text=True, errors="replace", timeout=MUSE_TIMEOUT)
         if r.returncode != 0:
             stderr_tail = r.stderr.strip()[-400:] if r.stderr else "none"
             log(f"  lipsync ERROR: {stderr_tail}")
@@ -288,7 +288,7 @@ def concat_with_transitions(video_files, output, xfade_dur=0.5):
                "-pix_fmt", "yuv420p",
                "-c:a", "aac", "-b:a", "192k",
                nf]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=300)
         if r.returncode == 0 and os.path.exists(nf):
             normalized.append(nf)
 
@@ -343,7 +343,7 @@ def concat_with_transitions(video_files, output, xfade_dur=0.5):
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         output]
     log(f"  xfade: {len(normalized)} videos -> {os.path.basename(output)} (audio={'on' if all_audio else 'off'})")
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=600)
     if r.returncode != 0:
         log(f"  xfade ERROR: {r.stderr[-300:] if r.stderr else 'none'}")
         # Fallback: 简单 concat (保留音视频)
@@ -355,7 +355,7 @@ def concat_with_transitions(video_files, output, xfade_dur=0.5):
         cmd2 = [FF, "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
                 "-c:v", "libx264", "-crf", "18", "-preset", "medium",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", output]
-        r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=300)
+        r2 = subprocess.run(cmd2, capture_output=True, text=True, errors="replace", timeout=300)
         if r2.returncode != 0:
             log(f"  concat also failed!")
             return False
@@ -383,7 +383,7 @@ def generate_cover(video_path, title, out_path):
             f"fontsize=40:x=(w-tw)/2:y=h*0.90:shadowcolor=black:shadowx=3:shadowy=3"
         )
         cmd2 = [FF, "-y", "-i", frame, "-vf", vf, out_path]
-        r = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
+        r = subprocess.run(cmd2, capture_output=True, text=True, errors="replace", timeout=120)
         if r.returncode == 0 and os.path.exists(out_path):
             log(f"  cover OK: {out_path}")
             return True
@@ -409,7 +409,7 @@ def make_ending_card(out_path, duration=3):
            "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-pix_fmt", "yuv420p",
            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
            "-shortest", out_path]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=120)
     if r.returncode == 0 and os.path.exists(out_path):
         log(f"  ending card OK: {out_path}")
         return True
@@ -508,7 +508,7 @@ def run_assemble():
                "-map", "0:v:0", "-map", "1:a:0",
                "-shortest",
                with_audio]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=120)
         if r.returncode != 0:
             log(f"    audio mix ERROR, use video only")
             shutil.copy2(stretched, with_audio)
@@ -596,7 +596,7 @@ def run_assemble():
                "-c:v", "copy",
                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
                with_bgm]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=180)
         if r.returncode == 0 and os.path.exists(with_bgm):
             final_vid = with_bgm
             log(f"  BGM+SFX ducking mixed (sizzle@0 & {sizzle_at:.1f}s)")

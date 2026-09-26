@@ -204,11 +204,33 @@ set CODEBUDDY_SAFE_DELETE_ENABLED=0
 
 ## 五、遗留事项
 
+> **更新（2026-09-26 20:0x）**：下列遗留项已全部清零 —— ffprobe 解码问题已修复（见下），CHANGELOG 已新建（`CHANGELOG.md`），文档提交已推上远程。
+
 | 项 | 影响 | 处理建议 |
 |----|------|---------|
-| 本地 2 个提交未推上远程（`b0d3e33` 转义修复 + `b077ea3` 文档完善） | 远程文档落后于本地 | 网络窗口恢复后 `git push`（用第三节定式解法即可） |
-| ffprobe `UnicodeDecodeError`（GBK stderr 按 utf-8 解码） | 仅日志噪音，发生在子进程 reader 线程，**不影响结果** | 可忽略；有洁癖可给 `subprocess` 加 `encoding='gbk', errors='replace'` |
-| 无 CHANGELOG | 版本追溯不便 | 可选补一份 |
+| ~~本地 2 个提交未推上远程~~ | 交付延迟 | ✅ **已解决**：小增量走 HTTPS 推送成功，远程 = 本地 `710e5a7` |
+| ~~ffprobe `UnicodeDecodeError`（GBK stderr 按 utf-8 解码）~~ | 仅日志噪音 | ✅ **已修复**：见下方「P17 修复方案」 |
+| ~~无 CHANGELOG~~ | 版本追溯不便 | ✅ **已新建**：`CHANGELOG.md` |
+
+### P17 修复方案（ffprobe 输出解码崩溃）
+
+**根因**：`subprocess.run(..., text=True)` 让 Python 按**本地编码**（中文 Windows 为 cp936/GBK）解码子进程输出；ffprobe/ffmpeg 实际可能输出 UTF-8 字节，编码不匹配即在 **reader 线程**抛 `UnicodeDecodeError` —— 该异常发生在子线程，外层 `try/except` 拦不住，导致音频时长被误判为 `0.0`。
+
+**修复**：
+
+1. `quality/gate.py` 新增 `_safe_decode()` —— 改为**字节捕获 + 多编码回退**（`utf-8 → gbk → cp936 → latin-1`），彻底不依赖本地编码猜测
+2. 其余核心运行时文件的 `subprocess.run(..., text=True)` 统一加 `errors="replace"`，保证任何编码下都不抛异常
+
+影响文件：`quality/gate.py`、`story2/assemble.py`、`story2/gen_dialogue.py`、`story2/gen_ltx.py`、`post/compose.py`、`scripts/video_engine.py`、`scripts/main.py`
+
+**实测**（4 类输入零异常）：
+
+| 输入 | 结果 |
+|------|------|
+| UTF-8 中文 | `中文UTF8测试` ✅ |
+| GBK 中文 | `中文GBK测试` ✅（回退到 gbk 解码） |
+| ASCII 数值 | `12.345` ✅ |
+| 非法字节 `\xff\xfe\x80` | `ÿþ\x80abc` ✅（latin-1 兜底，不崩溃） |
 
 ---
 

@@ -35,6 +35,26 @@ class GateConfig:
     require_audio: bool = False          # 配音场景置 True
 
 
+def _safe_decode(raw: bytes | str | None) -> str:
+    """安全解码子进程输出。
+
+    Windows 中文环境下 ffprobe/ffmpeg 可能输出 GBK(cp936) 或 UTF-8 字节，
+    用 `text=True` 交给 Python 按本地编码解码时，编码不匹配会在 reader 线程
+    抛 UnicodeDecodeError（该异常发生在子线程，外层 try 也拦不住）。
+    这里改为字节捕获 + 多编码回退，彻底消除该噪音。
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    for enc in ("utf-8", "gbk", "cp936", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 class QualityGate:
     """基于 ffprobe 的本地质量检查。"""
 
@@ -52,10 +72,12 @@ class QualityGate:
             "-show_format", "-show_streams", str(path),
         ]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            # 字节捕获 + 安全解码：避免 Windows 下 GBK/UTF-8 编码不匹配
+            # 在子进程 reader 线程抛 UnicodeDecodeError（问题复盘 P17）
+            r = subprocess.run(cmd, capture_output=True, timeout=30)
             if r.returncode != 0:
-                return {"error": f"ffprobe 失败: {r.stderr.strip()[-200:]}"}
-            return json.loads(r.stdout)
+                return {"error": f"ffprobe 失败: {_safe_decode(r.stderr).strip()[-200:]}"}
+            return json.loads(_safe_decode(r.stdout))
         except Exception as exc:  # noqa: BLE001
             return {"error": f"ffprobe 异常: {exc}"}
 
@@ -80,9 +102,9 @@ class QualityGate:
                 [self.ffprobe, "-v", "error", "-count_frames",
                  "-select_streams", "v:0", "-show_entries",
                  "stream=nb_read_frames", "-of", "csv=p=0", str(path)],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, timeout=60,
             )
-            return int(r.stdout.strip() or -1)
+            return int(_safe_decode(r.stdout).strip() or -1)
         except Exception:
             return -1
 

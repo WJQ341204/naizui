@@ -36,7 +36,7 @@ def get_duration(path):
     try:
         r = subprocess.run([FFP, "-v", "error", "-show_entries", "format=duration",
                             "-of", "default=noprint_wrappers=1:nokey=1", path],
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, errors="replace", timeout=30)
         if r.returncode == 0 and r.stdout.strip():
             return float(r.stdout.strip())
     except Exception:
@@ -155,7 +155,7 @@ def main():
                            capture_output=True, timeout=30)
         scene_wav = os.path.join(OUT_DIR, f"scene_{scene_id}.wav")
         r = subprocess.run([FF, "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
-                            "-c", "copy", scene_wav], capture_output=True, text=True, timeout=60)
+                            "-c", "copy", scene_wav], capture_output=True, text=True, errors="replace", timeout=60)
         if r.returncode != 0:
             log(f"  拼接失败: {r.stderr[-200:]}")
             # fallback: 直接用首句
@@ -164,11 +164,11 @@ def main():
         scene_wav_48 = os.path.join(OUT_DIR, f"scene_{scene_id}_48k.wav")
         r2 = subprocess.run([FF, "-y", "-i", scene_wav, "-ar", "48000", "-ac", "2",
                              "-c:a", "pcm_s16le", scene_wav_48],
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, errors="replace", timeout=60)
         if r2.returncode == 0:
             # ffmpeg -y 直接覆盖 scene_wav（不依赖 os.unlink，规避沙箱安全删除拦截）
             r3 = subprocess.run([FF, "-y", "-i", scene_wav_48, "-c:a", "pcm_s16le", scene_wav],
-                                capture_output=True, text=True, timeout=60)
+                                capture_output=True, text=True, errors="replace", timeout=60)
             if r3.returncode == 0:
                 try:
                     os.remove(scene_wav_48)

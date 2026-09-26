@@ -165,7 +165,7 @@ def get_video_duration(mp4):
     try:
         r = subprocess.run([FFP, "-v", "error", "-show_entries", "format=duration",
                             "-of", "default=noprint_wrappers=1:nokey=1", mp4],
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, errors="replace", timeout=30)
         if r.returncode == 0 and r.stdout.strip():
             return float(r.stdout.strip())
     except Exception:

@@ -32,7 +32,7 @@ FPS = 30
 async def _run(cmd: list[str], timeout: float = 600,
                cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
     return await asyncio.to_thread(
-        lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+        lambda: subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout,
                                cwd=str(cwd) if cwd else None))
 
 

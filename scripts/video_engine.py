@@ -572,7 +572,7 @@ def _is_static_video(path: str) -> bool:
         pr = subprocess.run(
             [FFPROBE, '-v', 'quiet', '-count_frames', '-select_streams', 'v:0',
              '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', path],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, errors="replace", timeout=15
         )
         nframes = int(pr.stdout.strip() or 0)
         return nframes < 24
