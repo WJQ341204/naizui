@@ -1,13 +1,30 @@
+# ─── 核心服务 ───
 fastapi==0.115.6
 uvicorn==0.34.0
+pydantic>=2.0
 httpx==0.28.1
+websockets>=12.0
 python-multipart==0.0.20
 aiofiles==24.1.0
-websockets>=12.0
-edge-tts>=6.1.0
 python-dotenv==1.0.1
-pydub==0.25.1
+PyYAML>=6.0            # config/settings.py 加载 settings.yaml 必需
 
+# ─── 配音 TTS ───
+edge-tts>=6.1.0        # Edge-TTS（默认兜底引擎）
+aiohttp>=3.9.0         # CosyVoice2 本地引擎调用
+pydub==0.25.1          # 音频裁剪/混音/时长处理
+
+# ─── 媒体处理 ───
 numpy>=1.26.0
 Pillow>=10.0.0
 audioop-lts>=0.4.1; python_version >= "3.13"
+
+# ─── 可选：本地/云端引擎依赖 ───
+# requests>=2.31.0       # 部分云 API 客户端
+# opencv-python>=4.9.0   # 画面质量分析（cv2）
+# torch / diffusers / peft / safetensors / huggingface_hub   # CosyVoice2 / LoRA 训练
+# insightface / onnxruntime-gpu                              # FaceID 角色一致性
+# psutil / pystray / pywebview                               # 桌面启动器
+
+# ─── 可选：Kokoro 本地 TTS ───
+# kokoro-onnx / soundfile

@@ -1,153 +1,162 @@
 # 墨影流光 / LuminaForge — 小说转视频 AI 管线
 
-将小说文本自动转换为竖屏视频，支持 AI 分镜、关键帧生成、LTX 22B 图生视频、CosyVoice2 中文配音、MuseTalk 口型同步、FFmpeg 后期合成。
+> **v12.3** · 把小说文本自动转成竖屏短视频：AI 分镜 → 关键帧 → 图生视频 → 情绪配音 → 字幕/BGM → 成片。
 
-## 项目组成
+![status](https://img.shields.io/badge/TTS-%E9%98%B6%E8%B7%83%E6%98%9F%E8%BE%B0-green) ![status](https://img.shields.io/badge/%E8%A7%86%E9%A2%91-Wan2.2%20A14B-blue) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
-本项目由两部分组成，可独立运行也可联合使用：
+---
 
-| 模块 | 路径 | 用途 |
-|------|------|------|
-| **LuminaForge 桌面应用** | `scripts/` `app/` `web/` `static/` | FastAPI 后端 + React 前端，PyInstaller 打包为桌面 exe，提供 Web UI 管理视频生成全流程 |
-| **story2 管线脚本** | `story2/` | 独立 Python 脚本管线，直接通过 ComfyUI API + CosyVoice2 API + FFmpeg 生成视频，无需启动桌面应用 |
-| **工业化流水线（新）** | `engines/` `quality/` `scheduler/` `pipeline/` `config/` `post/` | 模块化、配置驱动、带自动质量门和批量队列的新一代出片链路。统一抽象本地/云端双引擎，含精确字幕、合成、成本治理。**使用手册见 [docs/PIPELINE_USE.md](docs/PIPELINE_USE.md)** |
-| **CosyVoice2 集成** | `cosyvoice2/` | 改造版 TTS 服务端（参考音按需放入 cn_refs/） |
-| **ComfyUI 工作流** | `comfyui/` | LTX I2V / 文生图等 JSON 工作流模板 + 低显存重启脚本 |
+## 一、它能做什么
 
-## 快速开始
+输入一段小说文本，输出一条带**情绪配音 + 精确字幕 + 背景音乐**的竖屏视频：
+
+| 环节 | 实现 |
+|---|---|
+| AI 分镜 | DeepSeek 拆解场景、生成画面描述与台词 |
+| 关键帧 | ComfyUI SDXL / PULID 角色一致性出图 |
+| 图生视频 | **Wan 2.2 A14B（wan5b 两段式引擎）**：采样+解码 → RIFE 补帧 → 2x 超分 |
+| 配音 | **阶跃星辰 StepFun（默认）** / CosyVoice2（本地）/ Edge-TTS（兜底） |
+| 情绪 | 21 种场景情绪自动转配音指导，强度 1-10 可调 |
+| 后期 | 精确字幕、BGM 混音、转场、快进/快退、成片合并 |
+
+**实测**：12 场景成片 68 秒 / 1408×2560@48fps；单场景全链路约 12-17 分钟（RTX 5070 8GB，低显存模式）。
+
+---
+
+## 二、快速开始（Windows 本机）
 
 ### 环境要求
 
-- **Python 3.11+**（推荐 3.13）
-- **Node.js 18+**（前端构建）
-- **NVIDIA GPU**（RTX 5070 8.5GB VRAM 可跑，需低显存模式）
-- **FFmpeg 6+**（系统 PATH 可用）
-- **ComfyUI**（独立安装，端口 8188）
-- **CosyVoice2**（独立安装，端口 50000）
+- Python 3.11+（推荐 3.13）· Node.js 18+（仅前端构建需要）
+- NVIDIA GPU 8GB+（Wan A14B 需低显存模式）
+- FFmpeg 6+（加入 PATH）
+- ComfyUI（端口 8188）· 可选 CosyVoice2（端口 50000）
 
-### 1. 启动 ComfyUI（低显存模式）
-
-```bat
-:: 双击 comfyui/restart_comfyui.bat
-:: 或手动启动：
-python "<ComfyUI 安装目录>\main.py" --lowvram --async-offload 2 --port 8188 --listen 127.0.0.1
-```
-
-> **必须** 使用 `--lowvram --async-offload 2`，否则 LTX 22B 会 OOM 崩进程。
-
-### 2. 启动 CosyVoice2 TTS 服务
+### 1. 安装依赖
 
 ```bash
-cd <CosyVoice2 安装目录>
-cosy_env/Scripts/python.exe server.py  # 端口 50000
-```
-
-### 3a. 运行 story2 管线（脚本方式）
-
-```bash
-cd story2/
-
-# 第一步：生成配音（调用 CosyVoice2 API）
-python gen_dialogue.py
-
-# 第二步：生成视频段（调用 ComfyUI LTX I2V，耗时数小时）
-python gen_ltx.py all
-
-# 第三步：合成成片（FFmpeg 拼接 + 字幕 + BGM + 片尾）
-python assemble.py
-```
-
-### 3b. 运行 LuminaForge 桌面应用
-
-```bat
-:: 安装依赖
 pip install -r requirements.txt
-cd web && npm install && npm run build && cd ..
-
-:: 启动
-launch.bat
-:: 访问 http://localhost:8190
 ```
 
-## 项目结构
+### 2. 启动 ComfyUI（**必须低显存**）
+
+```bat
+python "<ComfyUI目录>\main.py" --lowvram --async-offload 2 --port 8188 --listen 127.0.0.1
+```
+
+> 不加 `--lowvram` 会 OOM 崩进程。
+
+### 3. 配置 `.env`
+
+```bash
+cp .env.example .env
+```
+
+必填 `DEEPSEEK_API_KEY`（AI 分镜）。**阶跃星辰配音**另需填 `STEPFUN_API_KEY`（见下文）。
+
+### 4. 启动应用
+
+双击 `start_app.bat` → 浏览器打开 **http://127.0.0.1:8190**，或运行 `dist/LuminaForge.exe`（桌面版，免安装 Python）。
+
+前端开发模式：`cd web && npm install && npm run dev`
+
+---
+
+## 三、配音引擎（v12.3 重点）
+
+引擎按优先级自动选择，**任何引擎失败都会自动降级，出片不会中断**：
+
+```
+stepfun（配了 Key） → cosyvoice（本地已启动） → edge（免费兜底）
+```
+
+可用 `TTS_ENGINE=stepfun|cosyvoice|edge` 强制指定。
+
+### 阶跃星辰 StepFun（推荐）
+
+1. 到 https://platform.stepfun.com 注册并创建 API Key
+2. 填入 `.env` 的 `STEPFUN_API_KEY=`
+3. **Step Plan 订阅 Key 必须再设** `STEPFUN_BASE_URL=https://api.stepfun.com/step_plan/v1`
+   （按量计费 Key 注释掉这行。搞错会报 `402 exceeded quota`）
+
+能力：
+
+- 21 种场景情绪自动转为情绪指导（紧张/悲伤/热血/神秘…），强度 1-10 控制浓淡
+- 旁白/对白差异化，旁白自动附加「沉稳电影旁白」风格
+- 语速 `+8%` → speed 1.08；音量 `+20%` → volume 1.2
+- Edge 音色自动映射官方音色（晓晓→邻家姐姐、云健→磁性男声…）
+- UI 音色列表内含 32 个阶跃官方音色，可直接选
+- 长文本（>900 字）自动按句分段合成后拼接
+
+自检：`python test_stepfun_tts.py --dry`（逻辑验证）/ `python test_stepfun_tts.py`（真实合成，耗额度）
+
+---
+
+## 四、环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | - | AI 分镜分析（必填） |
+| `COMFYUI_URL` | `http://127.0.0.1:8188` | ComfyUI 地址 |
+| `COMFYUI_MODELS_DIR` | 空 | 模型目录，如 `D:/ComfyUI/models` |
+| `COMFYUI_PATH` | 空 | ComfyUI 根目录（用于定位自带 ffmpeg） |
+| `STEPFUN_API_KEY` | 空 | 阶跃星辰 Key，填写后自动成为默认配音引擎 |
+| `STEPFUN_BASE_URL` | `https://api.stepfun.com/v1` | **Step Plan 订阅 Key 改成 `https://api.stepfun.com/step_plan/v1`** |
+| `STEPFUN_TTS_MODEL` | `stepaudio-2.5-tts` | 可选 `step-tts-2` / `step-tts-mini`（轻量但不支持情绪指导） |
+| `TTS_ENGINE` | 空（自动） | 强制 `stepfun` / `cosyvoice` / `edge` |
+
+> ⚠️ `.env` 已在 `.gitignore` 中，**切勿提交密钥**。
+
+---
+
+## 五、项目结构
 
 ```
 novel-to-video-codex/
-├── scripts/               # 核心后端脚本
-│   ├── main.py            # FastAPI 主应用（537KB，含全部分镜/生成/后期逻辑）
-│   ├── launcher.py        # PyInstaller 桌面启动器
-│   ├── video_engine.py    # 视频生成引擎
-│   ├── storage.py          # 数据存储
-│   ├── kling_client.py     # Kling 视频 API 客户端
-│   ├── cloud_video.py     # 云端视频生成
-│   └── environment_generator.py
-├── app/                    # FastAPI 模块化组件
-│   ├── config.py          # 统一配置
-│   ├── models.py          # 数据模型
-│   └── services/
-│       └── comfyui_client.py  # ComfyUI API 客户端
-├── web/                    # React + Vite + Tailwind 前端
-│   ├── src/               # TypeScript 源码
-│   │   ├── pages/         # Dashboard/StoryboardEditor/Settings 等
-│   │   ├── hooks/         # useApi/useComfyUI/useWebSocket 等
-│   │   └── stores/        # Zustand 状态管理
-│   └── dist/              # 前端构建产物（npm run build 生成，不入库）
-├── story2/                 # 独立视频生成管线
-│   ├── gen_ltx.py         # LTX I2V 韧性驱动（孤儿回收+无限重试+skip）
-│   ├── assemble.py        # 最终合成（xfade+拉伸+字幕+BGM+片尾+封面）
-│   ├── gen_dialogue.py    # CosyVoice2 多角色中文配音
-│   ├── clean_watermark.py # 关键帧水印去除
-│   ├── shots.json         # 镜头定义（每镜多段独立关键帧+运镜）
-│   ├── dialogue.json      # 台词文本（角色+内容）
-│   └── scene_audio_map.json  # 场景→配音映射
-├── comfyui/                # ComfyUI 工作流模板
-│   ├── img2vid.json       # LTX 2.3 22B I2V（含占位符）
-│   ├── txt2img_pulid.json # PULID 角色一致性文生图
-│   ├── restart_comfyui.bat # 低显存重启脚本
-│   └── start_comfyui.bat
-├── cosyvoice2/             # CosyVoice2 集成
-│   ├── server.py          # 改造版服务端（中文参考音 zero-shot）
-│   ├── cn_refs.json       # 参考音元数据
-│   └── cn_refs/           # 中文参考音样片（3种角色音色）
-├── bgm/                    # 背景音乐库（17 首）
-├── sfx/                    # 音效库（action/ambient/transition）
-├── static/                 # 旧版 Web UI（HTML+CSS+JS）
-├── resources/              # 字体 + 图标
-│   └── fonts/             # NotoSansSC OTF（字幕烧录用）
-├── docs/                   # 文档
-│   ├── ARCHITECTURE.md    # 架构与数据流
-│   ├── SETUP.md           # 环境搭建指南
-│   ├── GOTCHAS.md         # 已知坑与解决方案
-│   └── PIPELINE.md        # story2 管线详解
-├── .env.example            # 环境变量模板
-├── requirements.txt        # Python 依赖
-├── luminaforge.spec        # PyInstaller 打包配置
-├── Dockerfile              # Docker 部署
-├── docker-compose.yml
-├── launch.bat / launch.sh  # 启动脚本
-└── install.ps1 / uninstall.ps1  # Windows 安装/卸载
+├── scripts/main.py          # FastAPI 主应用（分镜/生成/TTS/后期全流程）
+├── scripts/launcher.py      # PyInstaller 桌面启动器
+├── app/                     # 配置、数据模型、ComfyUI 客户端
+├── engines/                 # 视频引擎（wan5b 两段式、ltx、cloud 等）
+├── config/settings.py       # YAML 配置（需 PyYAML）
+├── quality/ scheduler/ pipeline/ post/   # 质量门、队列、流水线、后期合成
+├── web/                     # React + Vite + TypeScript 前端
+├── story2/                  # 独立脚本管线（不走桌面应用）
+├── comfyui/                 # ComfyUI 工作流模板 + 启动脚本
+├── cosyvoice2/              # CosyVoice2 本地 TTS 集成
+├── dist/LuminaForge.exe     # 打包好的桌面版（免安装运行）
+├── docs/                    # 文档（架构/搭建/管线/踩坑）
+└── README_本机部署.md        # 本机实战部署指南（含实测性能与 FAQ）
 ```
 
-> 二进制素材（BGM、SFX、字体、参考音）不入 Git，按需用 `bgm/generate_bgm.py`、`sfx/generate_sfx.py` 生成或从外部下载后放入对应目录。
+详细文档：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs/SETUP.md`](docs/SETUP.md) · [`docs/PIPELINE_USE.md`](docs/PIPELINE_USE.md) · [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
 
-## 环境变量
+---
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DEEPSEEK_API_KEY` | - | DeepSeek API Key（AI 分镜分析，必填） |
-| `COMFYUI_URL` | `http://127.0.0.1:8188` | ComfyUI 地址 |
-| `COMFYUI_MODELS_DIR` | 留空（自动使用仓库内 `ComfyUI/models`） | 模型目录 |
+## 六、技术栈
 
-## 技术栈
+- **后端**：FastAPI + uvicorn + httpx + websockets
+- **前端**：React 18 + TypeScript + Vite + Tailwind + Zustand
+- **视频**：ComfyUI + Wan 2.2 A14B（I2V）· RIFE 补帧 · 2x 超分
+- **配音**：阶跃星辰 StepFun / CosyVoice2 / Edge-TTS
+- **后期**：FFmpeg（ASS 字幕烧录 + BGM 混音 + concat）
+- **打包**：PyInstaller（onefile exe，便携数据存 exe 同级目录）
 
-- **后端**: FastAPI + uvicorn + httpx + websockets
-- **前端**: React 18 + TypeScript + Vite + Tailwind CSS + Zustand
-- **视频生成**: ComfyUI + LTX 2.3 22B fp8 (I2V)
-- **配音**: CosyVoice2 (zero-shot 中文参考音)
-- **口型**: MuseTalk v15（可选，默认关闭）
-- **后期**: FFmpeg 8.x（xfade 转场 + ASS 字幕 + drawtext）
-- **打包**: PyInstaller（冻结桌面 exe）
+---
 
-## 许可证
+## 七、常见问题
 
-MIT
+见 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)，高频问题速查：
+
+| 症状 | 原因 |
+|---|---|
+| StepFun `402 exceeded quota` | Step Plan Key 走错端点，设 `STEPFUN_BASE_URL` |
+| StepFun `401 invalid_api_key` | Key 填错/过期（已自动回退 Edge，出片不中断） |
+| 进程莫名退出、日志有 SystemExit | safe-delete 钩子，启动脚本需 `CODEBUDDY_SAFE_DELETE_ENABLED=0` |
+| httpx 报 `[Errno 22]` | 系统代理残留（Clash 未开），`set HTTP_PROXY=` 清空 |
+| T5 报 `fp8 scaled is not supported` | text_encoders 放的是 Comfy-Org repackaged 版，换 Kijai 版 |
+
+---
+
+## 八、许可证
+
+MIT — 详见 [`LICENSE`](LICENSE)。
