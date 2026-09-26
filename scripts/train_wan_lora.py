@@ -1,4 +1,4 @@
-"""Wan 2.2 I2V-A14B 角色 LoRA 训练脚本（diffusers + PEFT）。
+r"""Wan 2.2 I2V-A14B 角色 LoRA 训练脚本（diffusers + PEFT）。
 
 ⚠ 硬件要求：Wan 2.2 A14B 是 ~27B(MoE)/14B 模型，LoRA 训练需 **≥24GB 显存**（建议 40GB/A100）。
   8GB 显存机器无法本地训练本模型 LoRA —— 这是硬件硬约束，不是脚本问题。

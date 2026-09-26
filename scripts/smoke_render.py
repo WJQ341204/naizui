@@ -1,4 +1,4 @@
-"""真实出片冒烟：ComfyUIEngine 本地生成一段最短 LTX I2V，走质量门。
+r"""真实出片冒烟：ComfyUIEngine 本地生成一段最短 LTX I2V，走质量门。
 
 用法：venv\Scripts\python.exe scripts\smoke_render.py [首帧图]
 依赖：ComfyUI :8188 在线（--lowvram 模式）。

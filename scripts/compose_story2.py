@@ -1,4 +1,4 @@
-"""story2 完整成片合成（P5 本地样片）—— 复用 post.compose 工业化链路。
+r"""story2 完整成片合成（P5 本地样片）—— 复用 post.compose 工业化链路。
 
 输入（story2 已生成产物）：story2/videos/shot_XX_YY.mp4 + voice_lines + subs
 输出：output/story2_final_{MMDD}.mp4
