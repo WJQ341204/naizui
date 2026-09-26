@@ -4,6 +4,8 @@
 
 ![status](https://img.shields.io/badge/TTS-%E9%98%B6%E8%B7%83%E6%98%9F%E8%BE%B0-green) ![status](https://img.shields.io/badge/%E8%A7%86%E9%A2%91-Wan2.2%20A14B-blue) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
+**文档导航**：[部署与出片手册](README_本机部署.md) · [**问题复盘与故障档案（21 个坑的根因与解法）**](README_问题复盘.md) · [故障速查](docs/TROUBLESHOOTING.md) · [架构](docs/ARCHITECTURE.md) · [管线](docs/PIPELINE.md)
+
 ---
 
 ## 一、它能做什么
