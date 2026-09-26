@@ -6,6 +6,12 @@
 
 ## [未发布]
 
+### 新增
+- `scripts/make_stepfun_demo.py`：配音效果演示片生成器（可换音色）
+  - 复用已有场景成片画面，只重配阶跃星辰 TTS，用于对比不同音色效果
+  - `python scripts/make_stepfun_demo.py --voice linjiajiejie`
+  - 内置规避：concat list 绝对路径、ffmpeg 不在 PATH 时自动补齐、`tpad=stop_mode=clone` + `-shortest` 音画对齐
+
 ### 修复
 - **ffprobe 输出解码崩溃（问题复盘 P17）**：Windows 中文环境下 ffprobe/ffmpeg 输出 GBK(cp936) 或 UTF-8 字节，用 `text=True` 交给 Python 按本地编码解码时编码不匹配，会在子进程 **reader 线程**抛 `UnicodeDecodeError`（该异常外层 `try` 拦不住，导致时长误判为 0.0）
   - `quality/gate.py` 新增 `_safe_decode()`：字节捕获 + `utf-8 → gbk → cp936 → latin-1` 多编码回退
