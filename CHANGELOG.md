@@ -6,8 +6,27 @@
 
 ## [未发布]
 
-### 新增
-- `scripts/make_stepfun_demo.py`：配音效果演示片生成器（可换音色）
+### 新增（优化方案 P0/P2/P3 落地）
+- **P2 · TTS 缓存 + 并发**（`main.py`）
+  - `generate_tts` 拆为「缓存包装层 + `_generate_tts_impl` 实现层」，命中缓存直接复用，
+    key = md5(engine|voice|rate|volume|mood|intensity|is_narration|text)，落 `output/_tts_cache/`
+  - 新增 `generate_tts_batch(items, max_concurrency=4)`：`asyncio.gather` + 信号量限流（上限 8），
+    避免串行等 RTT，也避免触发云端 429
+  - 开关：`.env` 设 `TTS_CACHE=0` 可关闭
+  - **实测**：6 段冷启动 6.7s → 缓存命中 1.1s，**提速 6.1 倍**，第二轮零云端消耗
+- **P0 · 静默降级治理**（`video_engine.py`）
+  - `_wan5b` 补重试：最多 2 次 + 指数退避（5s/10s），**每次重试换 seed**，与 `_wan_a14b` 对齐
+    （原先一次失败即降级，实测降级率 8.3%）
+  - 降级必须留痕：`scene.error_msg` 写入失败原因 + 「已降级 ken_burns（静态图+推拉，画面内容不动）」
+  - 新增 `STRICT_VIDEO_MODE=1` 开关：开启后拒绝降级，宁可整条失败也不产出假视频
+
+### 修复
+- **P3 · 清理治理**（`main.py`）
+  - 新增 `_safe_cleanup()` 三道保险：① 文件名必须带 `scene_{id:03d}_` 前缀
+    ② 待删超 50 个视为通配过宽直接中止 ③ 绝不删 `final_video_path`
+  - 场景收尾新增**断言**：成片缺失或为空时标记 `error` 而非 `done`，
+    杜绝「final_video_path 指向已删中间产物 → QA 全 fail → 12 场景连环重跑（约 3 小时）」
+  - 实测：他场景文件被跳过、成片保留、超限中止，均符合预期
   - 复用已有场景成片画面，只重配阶跃星辰 TTS，用于对比不同音色效果
   - `python scripts/make_stepfun_demo.py --voice linjiajiejie`
   - 内置规避：concat list 绝对路径、ffmpeg 不在 PATH 时自动补齐、`tpad=stop_mode=clone` + `-shortest` 音画对齐

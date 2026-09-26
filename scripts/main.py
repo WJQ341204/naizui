@@ -1533,13 +1533,117 @@ async def _generate_silence_audio(output_path: str, duration: float) -> str:
     return output_path
 
 
+# ══════════════════════════════════════════════════════════════
+# v12.4: TTS 缓存 — 同一「文本+音色+情绪+语速」复用已生成音频
+# 目的：避免重复跑片重复消耗云端额度（阶跃星辰按字符计费）
+# 开关：.env 设 TTS_CACHE=0 可关闭
+# ══════════════════════════════════════════════════════════════
+TTS_CACHE_DIR = PROJECT_ROOT / "output" / "_tts_cache"
+TTS_CACHE_ENABLED = (os.environ.get("TTS_CACHE", "1").strip().lower()
+                     not in ("0", "false", "no", "off"))
+
+
+def _tts_cache_file(engine: str, text: str, voice: str, rate: str, volume: str,
+                    mood: str, intensity: int, is_narration: bool) -> Path:
+    """按全部影响输出的参数生成缓存文件名（md5，确定性）。"""
+    import hashlib
+    raw = "|".join([
+        str(engine), str(voice), str(rate), str(volume),
+        str(mood), str(intensity), "1" if is_narration else "0", str(text),
+    ])
+    return TTS_CACHE_DIR / (hashlib.md5(raw.encode("utf-8")).hexdigest() + ".mp3")
+
+
 async def generate_tts(text: str, output_path: str, voice: str = "zh-CN-XiaoxiaoNeural",
                        rate: str = "+0%", volume: str = "+0%",
                        engine: str = "edge",
                        mood: str = "",
                        intensity: int = 5,
                        is_narration: bool = False) -> float:
-    """生成语音文件，返回音频时长(秒)
+    """生成语音（带缓存），返回音频时长(秒)。
+
+    v12.4 新增缓存：命中则直接复用 output/_tts_cache/ 下的 mp3，
+    不消耗云端额度。缓存 key 覆盖 engine/voice/rate/volume/mood/intensity/
+    is_narration/text 全部影响输出的参数。
+    """
+    cache_fp = None
+    if TTS_CACHE_ENABLED:
+        try:
+            cache_fp = _tts_cache_file(engine, text, voice, rate, volume,
+                                       mood, intensity, is_narration)
+            if cache_fp.exists() and cache_fp.stat().st_size > 100:
+                TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(cache_fp), output_path)
+                dur = await get_audio_duration(output_path)
+                print(f"[TTS] 缓存命中 {cache_fp.name[:8]}… "
+                      f"（{len(text)}字，跳过云端合成）", flush=True)
+                return dur
+        except Exception as e:
+            print(f"[TTS] 缓存读取异常，走正常合成: {str(e)[:60]}", flush=True)
+            cache_fp = None
+
+    dur = await _generate_tts_impl(text, output_path, voice=voice, rate=rate,
+                                   volume=volume, engine=engine, mood=mood,
+                                   intensity=intensity, is_narration=is_narration)
+
+    # 合成成功则回写缓存
+    if TTS_CACHE_ENABLED and cache_fp is not None:
+        try:
+            TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            if Path(output_path).exists() and Path(output_path).stat().st_size > 100:
+                shutil.copy2(output_path, str(cache_fp))
+        except Exception as e:
+            print(f"[TTS] 缓存写入失败（不影响出片）: {str(e)[:60]}", flush=True)
+    return dur
+
+
+async def generate_tts_batch(items: list, max_concurrency: int = 4) -> list:
+    """并发批量生成 TTS（v12.4）。
+
+    TTS 是网络 IO 密集型，串行等待 RTT 很浪费；并发 3-5 可显著提速，
+    同时用信号量限制并发，避免触发云端限流（429）。
+
+    items: [{"text","output_path","voice","rate","volume","engine",
+             "mood","intensity","is_narration"}, ...]
+    返回: 与 items 等长的结果列表 [{"ok":bool,"duration":float,"error":str}, ...]
+    """
+    max_concurrency = max(1, min(int(max_concurrency or 4), 8))
+    sem = asyncio.Semaphore(max_concurrency)
+
+    async def _one(idx: int, it: dict) -> dict:
+        async with sem:
+            try:
+                d = await generate_tts(
+                    text=it.get("text", ""),
+                    output_path=it["output_path"],
+                    voice=it.get("voice", ""),
+                    rate=it.get("rate", "+0%"),
+                    volume=it.get("volume", "+0%"),
+                    engine=it.get("engine", "edge"),
+                    mood=it.get("mood", ""),
+                    intensity=it.get("intensity", 5),
+                    is_narration=it.get("is_narration", False),
+                )
+                return {"ok": True, "duration": d, "error": "", "index": idx}
+            except Exception as e:
+                return {"ok": False, "duration": 0.0,
+                        "error": f"{type(e).__name__}: {str(e)[:120]}", "index": idx}
+
+    t0 = time.time()
+    results = await asyncio.gather(*[_one(i, it) for i, it in enumerate(items)])
+    ok = sum(1 for r in results if r["ok"])
+    print(f"[TTS] 批量完成 {ok}/{len(items)} 成功，"
+          f"并发={max_concurrency}，耗时 {time.time() - t0:.1f}s", flush=True)
+    return results
+
+
+async def _generate_tts_impl(text: str, output_path: str, voice: str = "zh-CN-XiaoxiaoNeural",
+                             rate: str = "+0%", volume: str = "+0%",
+                             engine: str = "edge",
+                             mood: str = "",
+                             intensity: int = 5,
+                             is_narration: bool = False) -> float:
+    """生成语音文件（实际实现，不含缓存逻辑），返回音频时长(秒)
 
     engine 参数:
       - "stepfun" : 阶跃星辰 StepFun TTS（云端，电影级中文配音+情绪指导，需 STEPFUN_API_KEY）
@@ -3100,6 +3204,61 @@ def _stable_seed(text: str) -> int:
     zlib.crc32 是确定性算法，跨进程、跨机器均稳定。
     """
     return zlib.crc32((text or "").encode("utf-8")) % (2**31)
+
+
+def _safe_cleanup(scene_dir: Path, scene, patterns: list, max_files: int = 50) -> int:
+    """安全清理场景中间产物（v12.4）。
+
+    历史上一次事故：清理用了全局通配 `*_faded*`，把其他场景的中间文件一起删掉，
+    导致 QA 的 video_integrity 全部失败并**触发 12 个场景连环重跑**（约 3 小时白跑）。
+    虽已收窄为场景前缀，这里再加三道保险：
+      1. 文件名必须带当前场景前缀 scene_{id:03d}_
+      2. 待删数量超过 max_files 视为异常，直接中止（防止通配写错时删一大片）
+      3. 绝不删 final_video_path 指向的文件
+    返回实际删除数量。
+    """
+    prefix = f"scene_{int(scene.id):03d}_"
+    final_path = str(getattr(scene, "final_video_path", "") or "")
+    candidates = []
+    for pattern in patterns:
+        try:
+            candidates.extend(scene_dir.glob(pattern))
+        except Exception as e:
+            logger.warning(f"[Cleanup] 通配异常 {pattern}: {str(e)[:60]}")
+            continue
+
+    # 只保留：文件 + 场景前缀 + 不是成片（按路径去重，避免通配重叠重复计数）
+    targets, seen = [], set()
+    for f in candidates:
+        try:
+            if not f.is_file():
+                continue
+            key = str(f.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            if not f.name.startswith(prefix):
+                logger.warning(f"[Cleanup] 跳过非本场景文件（疑似通配过宽）: {f.name}")
+                continue
+            if str(f) == final_path or str(f.resolve()) == final_path:
+                continue
+            targets.append(f)
+        except Exception:
+            continue
+
+    if len(targets) > max_files:
+        logger.error(f"[Cleanup] 待删文件 {len(targets)} 个，超过上限 {max_files}，"
+                     f"疑似通配过宽，已中止本次清理（场景 {scene.id}）")
+        return 0
+
+    removed = 0
+    for f in targets:
+        try:
+            f.unlink(missing_ok=True)
+            removed += 1
+        except Exception as e:
+            logger.warning(f"[Cleanup] 删除失败 {f.name}: {str(e)[:60]}")
+    return removed
 
 
 async def _generate_character_portrait(job, character, save_dir: Path) -> Optional[str]:
@@ -8729,20 +8888,28 @@ async def _generate_scene_impl(job: JobState, scene: Scene, scene_dir: Path,
     # v13.1 修复: 原先 glob("*_faded*") 等通配会误删其他场景的同名中间文件
     # （每个场景收尾时把之前场景的 faded/graded 全删光，导致 QA 的 video_integrity
     #  全部失败并触发连环重跑），现限定为当前场景前缀。
-    cleanup_patterns = [
+    # v12.4: 改用 _safe_cleanup —— 强制场景前缀 + 数量上限校验 + 绝不删成片
+    _safe_cleanup(scene_dir, scene, [
         f"scene_{scene.id:03d}_graded*",
         f"scene_{scene.id:03d}_faded*",
         f"scene_{scene.id:03d}_with_audio*",
         f"scene_{scene.id:03d}_*_bgm_tmp*",  # add_scene_bgm 的 0 字节残留
-    ]
-    for pattern in cleanup_patterns:
-        for f in scene_dir.glob(pattern):
-            try:
-                # 只清理不在 final_video_path 中的文件
-                if str(f) != scene.final_video_path:
-                    f.unlink(missing_ok=True)
-            except Exception as e:
-                logger.warning(f"[Cleanup] 清理文件失败 {f}: {str(e)[:80]}")
+    ])
+
+    # v12.4: 收尾断言 —— 成片必须真实存在才允许标记 done
+    # （历史上 final_video_path 曾指向被清理掉的中间产物，导致 QA 全 fail + 连环重跑）
+    _fv = getattr(scene, "final_video_path", None)
+    if not _fv or not Path(_fv).exists() or Path(_fv).stat().st_size == 0:
+        scene.status = "error"
+        scene.error_msg = f"成片缺失或为空: {_fv}（拒绝标记 done，避免 QA 连环重跑）"
+        logger.error(f"[Scene {scene.id}] {scene.error_msg}")
+        await broadcast_progress(job_id, {
+            "type": "scene_status",
+            "scene_id": scene.id,
+            "status": "error",
+            "error": scene.error_msg,
+        })
+        return
 
     scene.status = "done"
     scene.comfyui_progress = 1.0

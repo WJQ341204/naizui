@@ -29,6 +29,11 @@ from app.config import (
 FFMPEG = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE = os.environ.get("FFPROBE_PATH") or shutil.which("ffprobe") or "ffprobe"
 
+# v12.4: 严格视频模式 —— 开启后，真视频引擎失败时【拒绝】降级为 ken_burns
+# （ken_burns 是静态图+推拉，画面内容不动，交付级出片不应混入）
+# .env 设 STRICT_VIDEO_MODE=1 启用
+_STRICT_VIDEO_MODE = os.environ.get("STRICT_VIDEO_MODE", "0").strip().lower() in ("1", "true", "yes", "on")
+
 
 # ─── 模式1: 云端文生视频 ──────────────────────────────────
 
@@ -510,14 +515,37 @@ async def _wan5b(scene, scene_dir, job, ctx) -> str:
             return ""
         kf = pngs[0]
     prompt = getattr(scene, "video_prompt", None) or getattr(scene, "description", "") or ""
-    req = GenerateRequest(
-        prompt=prompt, first_frame=kf,
-        width=704, height=1280, duration_seconds=2.0, fps=24, seed=None,
-        output_dir=scene_dir, output_name="wan5b",
-        timeout_seconds=2400,
-    )
-    clip = await Wan5BEngine().generate(req)
-    return str(clip.video_path)
+
+    # v12.4: 补重试 —— 原先 _wan5b 一次失败即静默降级，实测降级率 8.3%。
+    # 与 _wan_a14b 对齐：最多重试 2 次，指数退避，且每次换 seed
+    # （同一 seed 遇到同样的噪声/显存路径容易重复失败）。
+    max_retries = 2
+    last_err = ""
+    for attempt in range(max_retries + 1):
+        try:
+            req = GenerateRequest(
+                prompt=prompt, first_frame=kf,
+                width=704, height=1280, duration_seconds=2.0, fps=24,
+                # 每次重试换噪声，避免卡在同一条失败路径上
+                seed=None if attempt == 0 else 1000 + attempt * 7919,
+                output_dir=scene_dir, output_name="wan5b",
+                timeout_seconds=2400,
+            )
+            clip = await Wan5BEngine().generate(req)
+            if clip and getattr(clip, "video_path", None) and Path(clip.video_path).exists():
+                return str(clip.video_path)
+            last_err = "引擎返回空结果"
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {str(e)[:120]}"
+            print(f"[VideoEngine] Wan5B 第{attempt + 1}次失败: {last_err}", flush=True)
+
+        if attempt < max_retries:
+            await asyncio.sleep((attempt + 1) * 5)
+            print(f"[VideoEngine] Wan5B 重试 {attempt + 1}/{max_retries}（换 seed）", flush=True)
+
+    # 记录失败原因，供上层降级时留痕（v12.4: 不再静默）
+    scene.error_msg = f"wan5b 失败（{last_err}）"
+    return ""
 
 
 VIDEO_MODES = {
@@ -650,12 +678,22 @@ async def dispatch(scene, scene_dir, ctx: dict) -> str:
         r = await _wan5b(scene, scene_dir, job, ctx)
         if r:
             scene.video_mode_used = "wan5b"
+            scene.error_msg = ""   # 重试后成功，清除此前记录的失败原因
             return r
         # Wan 5B 失败，降级到 Ken Burns（如果有图片）
+        # v12.4: 严格模式下宁可整条失败，也不产出「静态图+推拉」的假视频
+        reason = getattr(scene, "error_msg", "") or "wan5b 失败（原因未记录）"
+        if _STRICT_VIDEO_MODE and local_img and local_img != "__T2V_SKIPPED__" and Path(local_img).exists():
+            scene.error_msg = f"{reason}｜严格模式：已拒绝降级，请修复后重跑该场景"
+            print(f"[VideoEngine] 场景 {scene.id}: {scene.error_msg}", flush=True)
+            return ""
         if local_img and local_img != "__T2V_SKIPPED__" and Path(local_img).exists():
             r = await _ken_burns(scene, scene_dir, job, ctx)
             if r:
                 scene.video_mode_used = "ken_burns"
+                # v12.4: 降级必须留痕，避免出片后才发现混着静态图
+                scene.error_msg = f"{reason}｜已降级 ken_burns（静态图+推拉，画面内容不动）"
+                print(f"[WARN] 场景 {scene.id} 降级为 ken_burns: {reason}", flush=True)
                 return r
         return ""
 
