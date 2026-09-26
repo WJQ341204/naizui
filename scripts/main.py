@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 import asyncio, json, os, uuid, time, random, copy, re, shutil, subprocess, logging
+import zlib  # v12.4: 确定性种子（替代跨进程不稳定的内置 hash()）
 from pathlib import Path
 import httpx, websockets
 import edge_tts, sys
@@ -3088,6 +3089,19 @@ def split_paragraphs(text: str, max_chars: int = 120) -> list[str]:
 
 
 # ─── v7.0 IP-Adapter 角色定妆照生成 ─────────────────────
+def _stable_seed(text: str) -> int:
+    """由字符串生成【确定性】随机数种子（范围 0 ~ 2^31-1）。
+
+    不能用内置 hash() —— Python 对 str 的 hash 默认开启随机化（PYTHONHASHSEED），
+    同一个字符串在不同进程里会得到不同值：实测 'de5b6bf7' 三次运行分别得到
+    1802862013 / 206793090 / 1101247780。后果是「同一 job_id 每次重启服务后
+    出图都不一样」，结果无法复现。
+
+    zlib.crc32 是确定性算法，跨进程、跨机器均稳定。
+    """
+    return zlib.crc32((text or "").encode("utf-8")) % (2**31)
+
+
 async def _generate_character_portrait(job, character, save_dir: Path) -> Optional[str]:
     """为指定角色生成一张高质量正面定妆照，用作 IP-Adapter 的参考图像。
     返回本地文件路径，失败返回 None。
@@ -3149,7 +3163,7 @@ professional photography, best quality, 8k.
     
     # 使用纯净 txt2img 工作流 (不使用 IP-Adapter, 避免循环依赖)
     txt2img_template = load_workflow("txt2img")
-    portrait_seed = abs(hash(character.name + job.id)) % (2**31)
+    portrait_seed = _stable_seed(character.name + job.id)
     
     portrait_workflow = fill_workflow(txt2img_template, {
         "POSITIVE_PROMPT": f"masterpiece, best quality, {portrait_prompt}",
@@ -8202,8 +8216,9 @@ async def _generate_scene_impl(job: JobState, scene: Scene, scene_dir: Path,
     scene.comfyui_progress = 0.0
     if job.video_mode != "ltx_t2v":
 
-        # 使用基于 job_id 的固定 seed，确保同一任务中所有场景的角色一致性
-        seed = abs(hash(job_id)) % (2**31)
+        # 基于 job_id 的确定性 seed，确保同一任务中所有场景的角色一致性
+        # （v12.4: 原用 hash()，跨进程不稳定导致无法复现，改用 crc32）
+        seed = _stable_seed(job_id)
         # 场景 seed 在 job seed 基础上偏移，保持各场景略有差异
         scene_seed = (seed + scene.id * 1000) % (2**31)
 
@@ -11083,7 +11098,7 @@ async def test_single_scene(job_id: str, scene_id: int = 1):
     start = time.time()
     try:
         # 构建最简单的 txt2img 工作流
-        scene_seed = (abs(hash(job_id)) % (2**31)) + scene_id * 1000
+        scene_seed = (_stable_seed(job_id) + scene_id * 1000) % (2**31)
         positive_prompt = scene.image_prompt or scene.description
         negative_prompt = ("(worst quality:1.4), (low quality:1.4), (bad hands:1.4), "
                            "bad anatomy, watermark, blurry, ugly, disfigured")

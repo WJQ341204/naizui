@@ -13,7 +13,12 @@
   - 内置规避：concat list 绝对路径、ffmpeg 不在 PATH 时自动补齐、`tpad=stop_mode=clone` + `-shortest` 音画对齐
 
 ### 修复
-- **ffprobe 输出解码崩溃（问题复盘 P17）**：Windows 中文环境下 ffprobe/ffmpeg 输出 GBK(cp936) 或 UTF-8 字节，用 `text=True` 交给 Python 按本地编码解码时编码不匹配，会在子进程 **reader 线程**抛 `UnicodeDecodeError`（该异常外层 `try` 拦不住，导致时长误判为 0.0）
+- **出图无法复现**：三处用内置 `hash()` 生成扩散模型种子（`main.py` 3152 角色立绘 / 8206 场景主种子 / 11086 备用路径）
+  - 根因：Python 对 `str` 的 `hash()` 默认开启随机化（PYTHONHASHSEED），同一 job_id 在三个独立进程里
+    分别得到 `1802862013` / `206793090` / `1101247780` —— 注释声称「固定 seed」但实际每次重启服务都变
+  - 修复：新增 `_stable_seed(text)` 用 `zlib.crc32`（确定性算法），三处全部替换
+  - 验证：同一 job_id 跨进程三次均为 `1245802820`，结果可复现
+  - 行为保持不变：同一任务内场景仍共享 base seed（各场景仅偏移 `scene.id * 1000`），角色一致性不受影响：Windows 中文环境下 ffprobe/ffmpeg 输出 GBK(cp936) 或 UTF-8 字节，用 `text=True` 交给 Python 按本地编码解码时编码不匹配，会在子进程 **reader 线程**抛 `UnicodeDecodeError`（该异常外层 `try` 拦不住，导致时长误判为 0.0）
   - `quality/gate.py` 新增 `_safe_decode()`：字节捕获 + `utf-8 → gbk → cp936 → latin-1` 多编码回退
   - `story2/assemble.py`、`story2/gen_dialogue.py`、`story2/gen_ltx.py`、`post/compose.py`、`scripts/video_engine.py`、`scripts/main.py` 的 `subprocess.run(..., text=True)` 统一加 `errors="replace"`
   - 实测：UTF-8 中文 / GBK 中文 / ASCII 数值 / 非法字节 四类输入全部零异常
