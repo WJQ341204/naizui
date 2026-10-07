@@ -26,13 +26,23 @@ VOICES = {
 }
 
 
+def resolve_voice(voice: str | None = None) -> str:
+    """把「晓晓」这类中文别名映射成 edge-tts 要的完整音色名。
+
+    edge-tts 只认 `zh-CN-XiaoxiaoNeural` 这种全名，传「晓晓」会直接
+    ValueError。别名表原先只在读环境变量 TTS_VOICE 时生效，导致
+    `--voice 晓晓`（README 里就是这么写的）一跑就崩。这里统一收口：
+    显式参数 > 环境变量 > 默认云健；已是全名则原样返回。
+    """
+    v = (voice or os.environ.get("TTS_VOICE", "")).strip()
+    if not v:
+        return VOICES["云健"]
+    return VOICES.get(v, v)
+
+
 def default_voice() -> str:
-    env = os.environ.get("TTS_VOICE", "").strip()
-    if env in VOICES:
-        return VOICES[env]
-    if env:
-        return env
-    return VOICES["云健"]
+    """未显式指定音色时的默认值（环境变量优先）。"""
+    return resolve_voice(None)
 
 
 async def synthesize(text: str, out_path: Path,
@@ -71,7 +81,7 @@ async def synthesize(text: str, out_path: Path,
             shutil.copyfile(cached, out_path)
             return out_path
 
-    v = voice or default_voice()
+    v = resolve_voice(voice)
     cmd = edge_tts.Communicate(text, v)
     kw = {}
     if rate:
@@ -87,5 +97,7 @@ async def synthesize(text: str, out_path: Path,
 
 
 def cache_key(text: str, voice: str | None = None) -> str:
-    v = voice or default_voice()
+    # 与 synthesize 用同一套别名解析，否则「晓晓」和 zh-CN-XiaoxiaoNeural
+    # 会算出两个不同的缓存 key，同一句话重复请求云端 TTS。
+    v = resolve_voice(voice)
     return hashlib.sha1(f"{v}|{text}".encode("utf-8")).hexdigest()[:16]
