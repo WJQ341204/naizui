@@ -1,0 +1,51 @@
+# ---- ComfyUI 镜像（仅 GPU 机器使用，走 --profile gpu 才构建）-----------------
+#
+# 想要不联网构建、或用私有 registry 时，把 compose 里的
+#   COMFYUI_IMAGE=comfyanonymous/comfyui:latest
+# 换成你自己的镜像名即可（官方镜像地址见 compose 注释）。
+#
+# 无 N 卡 / 构建环境没 git 时跳过：
+#   docker compose --profile gpu --no-build up comfyui   # 用现成镜像
+# -----------------------------------------------------------------------------
+
+# syntax=docker/dockerfile:1
+
+ARG PYTHON_VERSION=3.12
+ARG CUDA_INDEX=https://download.pytorch.org/whl/cu128
+
+FROM python:${PYTHON_VERSION}-slim AS runtime
+ARG CUDA_INDEX
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TZ=Asia/Shanghai \
+    VAE_AUTOINIT=0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+        libegl1 \
+        libgbm1 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ComfyUI
+RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git .
+
+# torch 走 cu128 索引；ComfyUI 自带 requirements 已裁剪掉 torch 相关项
+RUN python -m pip install --upgrade pip \
+    && pip install torch torchvision --index-url "$CUDA_INDEX" \
+    && pip install -r requirements.txt
+
+EXPOSE 8188
+
+HEALTHCHECK --interval=20s --timeout=5s --start-period=120s --retries=5 \
+    CMD curl -fsS http://127.0.0.1:8188/api/health || exit 1
+
+ENTRYPOINT ["python", "main.py"]
+CMD ["--listen", "0.0.0.0", "--port", "8188"]

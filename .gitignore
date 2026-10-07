@@ -1,0 +1,131 @@
+# ── 密钥 / 环境变量（绝不提交）──
+.env
+.env.local
+*.secret
+launcher_config.json
+# 本地 Gemini / 各类 API key 快照，极易误提交
+*.json.key
+*_key.json
+# GitHub 上传仓库用的 Personal Access Token（repo 权限），绝不入库
+.github_token
+
+# ── 日志 ──
+*.log
+*.out
+_logs/
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# ── Node.js ──
+node_modules/
+web/node_modules/
+
+# ── 构建产物 ──
+build/
+dist/
+*.spec.bak
+
+# ── 运行时产物（story2 管线）──
+story2/videos/
+story2/videos_v1_bak/
+story2/output/
+story2/voice_lines/
+story2/subs/
+story2/__pycache__/
+story2/shot_*_kf*.png
+
+# ── 权重（几十 GB，绝不入库；靠下载脚本/手工拉，见 models/ 说明）──
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.gguf
+*.h5
+*.msgpack
+*.onnx
+
+# 权重根目录：LTX-Video 2B fp8 + MiniMax-H3 量化版都放这里（约 40 GB 落盘）
+models/
+# ComfyUI 官方工作流模板是从 Comfy-Org/workflow_templates 现拉的，不入库
+tools/_h3src/
+
+# ── CosyVoice2 模型 ──
+cosyvoice2/pretrained_models/
+cosyvoice2/cosy_env/
+
+# ── 临时文件 ──
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ──
+.idea/
+.vscode/
+*.iml
+.qoder/
+
+# ── 数据库 ──
+*.db
+*.db-journal
+
+# ── 大文件 ──
+*.tar.gz
+*.zip
+*.7z
+
+# ── 测试 / 归档 ──
+_archive/
+_corrupted_backup/
+_subtest/
+test_output/
+test_ltx23_output/
+
+# ── 二进制素材（按需生成，不入库）──
+bgm/*.mp3
+sfx/*.mp3
+sfx/action/*.mp3
+sfx/ambient/*.mp3
+sfx/transition/*.mp3
+sfx/_generated/
+resources/fonts/
+resources/*.png
+resources/*.ico
+story2/refs/
+cosyvoice2/cn_refs/*.wav
+output/
+
+# ── 本次安全清理：不入库的个人/环境信息与第三方插件 ──
+_plugins/
+.dsh-project-memory/
+.dsh-memory/
+.research/
+comfyui/hist_*.json
+comfyui/obj_info_raw.json
+
+# ── 大体积生成产物 / 示例素材（不入库；分发走 Release 附件、网盘或 Git LFS）──
+# 这些是「跑出来的东西」不是「源码」，占了仓库 185MB 里的约 124MB：
+#   *.mp4                    73.8MB（OpenMontage 示例片 + _交付包成片 + story2 冒烟片）
+#   _交付包/ComfyUI素材/      21.0MB（资产锁定关键帧 / 角色场景参考图）
+#   comfyui/*_frame*.png     13.7MB（Wan 出图样张）
+#   comfyui/*_mid.png         6.5MB（同上）
+#   story2/smoke/             9.3MB（冒烟测试产物）
+# 注意：只忽略「生成物」。dataset/yhkf/（LoRA 训练集 31MB）和
+# OpenMontage/docs/images/（文档配图）是刻意保留的内容，不在忽略范围。
+# 需要回看这些素材时从 Release 附件或网盘取，不要重新提交进 git。
+*.mp4
+_交付包/ComfyUI素材/
+comfyui/*_frame*.png
+comfyui/*_mid.png
+story2/smoke/
+*.part??.zip

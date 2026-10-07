@@ -1,0 +1,40 @@
+# ─── 核心服务 ───
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic>=2.0
+httpx==0.28.1
+websockets>=12.0
+python-multipart==0.0.20
+aiofiles==24.1.0
+python-dotenv==1.0.1
+PyYAML>=6.0            # config/settings.py 加载 settings.yaml 必需
+
+# ─── 配音 TTS ───
+edge-tts>=6.1.0        # Edge-TTS（默认兜底引擎）
+aiohttp>=3.9.0         # CosyVoice2 本地引擎调用
+pydub==0.25.1          # 音频裁剪/混音/时长处理
+
+# ─── 媒体处理 ───
+numpy>=1.26.0
+Pillow>=10.0.0
+audioop-lts>=0.2.2; python_version >= "3.13"   # 原写 >=0.4.1，但该版本从未发布（上游最高 0.2.2），已修正
+
+# ─── 引擎依赖（QuickCut 本地兜底 + 云端 provider）───
+# QuickCut：Edge-TTS 配音 + PIL 底图 + ffmpeg 推镜，无显卡/无 key 也能出片
+imageio-ffmpeg>=0.4.9     # 二进制 ffmpeg 兜底（含 libass 与 xfade，精简版没有）
+requests>=2.31.0          # seedance_ark / kling_official / minimax 等直连工具
+fal-client>=0.4.0         # fal.ai 系列 provider
+google-genai>=1.0.0       # Veo 3
+openai>=1.40.0            # Grok / 兼容路由
+# opencv-python>=4.9.0   # 画面质量分析（cv2）
+# torch / diffusers / peft / safetensors / huggingface_hub   # CosyVoice2 / LoRA 训练
+# insightface / onnxruntime-gpu                              # FaceID 角色一致性
+# psutil / pystray / pywebview                               # 桌面启动器
+
+# ─── 可选：Kokoro 本地 TTS ───
+# kokoro-onnx / soundfile
+
+# ─── LTX-Video 本地推理必需（少一个都加载不了模型）───
+sentencepiece>=0.2.0      # T5 tokenizer 要用；缺了会回落 TikToken 并解析 spiece.model 失败
+protobuf>=4.25            # sentencepiece 的依赖，缺了同样加载不了 tokenizer
+tiktoken>=0.7             # 部分 HF tokenizer 的 tiktoken 文件需要

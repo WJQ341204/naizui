@@ -1,0 +1,102 @@
+# Novel-to-Video 部署编排
+#
+#   docker compose up -d                 # CPU 模式（本机可用：quickcut 底图 + LTX 2B CPU + 云端 provider）
+#   docker compose --profile gpu up -d   # 加上 ComfyUI（需要 NVIDIA 显卡 + nvidia-container-toolkit）
+#   docker compose run --rm app python scripts/shoot.py --demo --engine quickcut
+#
+# 说明：comfyui 服务放在 gpu profile 里，默认不带 —— 本机是 AMD 核显，
+#       硬绑 runtime: nvidia 会让整个 compose 在 CPU 机器上直接报错起不来。
+
+name: novel2vid
+
+services:
+  # ─────────────────────────── 主应用（永远起）───────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENABLE_GPU: "0"
+    image: novel2vid-app:cpu
+    container_name: novel2vid-app
+    restart: unless-stopped
+    ports:
+      - "8190:8190"
+    environment:
+      TZ: Asia/Shanghai
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      COMFYUI_URL: ${COMFYUI_URL:-}
+      COMFYUI_MODELS_DIR: /ComfyUI/models
+      HF_ENDPOINT: ${HF_ENDPOINT:-}
+      # 本地视频模型（LTX-Video 2B distilled fp8）。
+      # 这里写死 /app/models/ltx —— 若改了 MODEL_DIR，两者必须一起改（compose 插值不支持嵌套默认值）
+      LTX_MODEL_DIR: /app/models/ltx
+      LTX_STEPS: ${LTX_STEPS:-4}
+      LTX_WIDTH: ${LTX_WIDTH:-512}
+      LTX_HEIGHT: ${LTX_HEIGHT:-768}
+      LTX_FPS: ${LTX_FPS:-24}
+      LTX_MAX_FRAMES: ${LTX_MAX_FRAMES:-192}
+      LTX_GUIDANCE: ${LTX_GUIDANCE:-3.0}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      KLING_API_KEY: ${KLING_API_KEY:-}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      FAL_KEY: ${FAL_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      # 权重目录：Windows 上默认指向项目外的 ../models（在 .env 里改 MODEL_DIR）
+      - ${MODEL_DIR:-./models}:/app/models:ro
+      # 成片直接落在宿主机 ./output，方便在 Windows 资源管理器里看
+      - ./output:/app/output
+    expose:
+      - "8190"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8190/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+
+  # ─────────────────────── ComfyUI（仅 GPU 机器）──────────────────────────
+  comfyui:
+    profiles: ["gpu"]
+    image: ${COMFYUI_IMAGE:-comfyanonymous/comfyui:latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.comfyui
+      target: runtime
+      args:
+        ENABLE_GPU: "1"
+    container_name: novel2vid-comfyui
+    restart: unless-stopped
+    ports:
+      - "8188:8188"
+    environment:
+      TZ: Asia/Shanghai
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ${MODEL_DIR:-./models}:/ComfyUI/models:ro
+      - ./comfyui_output:/ComfyUI/output
+      - ./comfyui_input:/ComfyUI/input
+      - comfyui-nodes:/ComfyUI/custom_nodes
+      - comfyui-user:/ComfyUI/user/default
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8188/api/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      start_period: 90s
+      retries: 5
+
+volumes:
+  comfyui-nodes:
+  comfyui-user:

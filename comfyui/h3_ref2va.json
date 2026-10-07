@@ -1,0 +1,116 @@
+{
+  "1": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": 14,
+      "filename_prefix": "video/H3",
+      "format": "auto",
+      "codec": "auto"
+    }
+  },
+  "2": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{H3_VAE_NAME}}"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{H3_AUDIO_VAE_NAME}}"
+    }
+  },
+  "4": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "samples": 8,
+      "vae": 3
+    }
+  },
+  "5": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": 8,
+      "vae": 2
+    }
+  },
+  "6": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "res_multistep"
+    }
+  },
+  "7": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": 10,
+      "scheduler": "simple",
+      "denoise": 1,
+      "steps": "{{H3_STEPS}}"
+    }
+  },
+  "8": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": 12,
+      "guider": 9,
+      "sampler": 6,
+      "sigmas": 7,
+      "latent_image": 14
+    }
+  },
+  "9": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "conditioning": 14,
+      "model": 10
+    }
+  },
+  "10": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "{{H3_UNET_NAME}}"
+    }
+  },
+  "11": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "{{H3_CLIP_NAME}}",
+      "type": "minimax",
+      "device": "default"
+    }
+  },
+  "12": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "{{H3_SEED}}"
+    }
+  },
+  "13": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": 5,
+      "audio": 4
+    }
+  },
+  "14": {
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "inputs": {
+      "clip": 11,
+      "vae": 2,
+      "audio_vae": 3,
+      "ref_images.ref_image_0": 15,
+      "ref_images.ref_image_1": 16,
+      "prompt": "{{POSITIVE_PROMPT}}",
+      "length": "{{H3_LENGTH}}"
+    }
+  },
+  "15": {
+    "class_type": "LoadImage",
+    "inputs": {}
+  },
+  "16": {
+    "class_type": "LoadImage",
+    "inputs": {}
+  }
+}
