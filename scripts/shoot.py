@@ -78,6 +78,29 @@ _CHAPTER_RE = re.compile(
     r"|序[章言]?|序言|楔子|引子|尾声|后记|番外|番外篇|前言|结尾)[^\n]{0,12}$")
 
 
+LONG_SENTENCE = 70      # 超过这个长度的长句才按逗号拆
+MIN_FRAGMENT = 14       # 拆出来的碎片短于这个就并回上一句
+
+
+def _merge_short(parts: list[str], min_len: int = MIN_FRAGMENT) -> list[str]:
+    """把过短的碎片并回上一句。
+
+    直接按逗号切会产生「同样的台灯，」「唯一的区别是，」这类 6~8 字碎片，
+    单独配音念出来非常零碎、没有语流。这里从第二片起，短于 min_len 的一律
+    并进前一片，保证每个镜头至少是一个能连读的意群。
+    """
+    out: list[str] = []
+    for p in parts:
+        if out and len(p) < min_len:
+            out[-1] = out[-1] + p
+        else:
+            out.append(p)
+    # 首片过短时并到下一片：「外面不是楼层。」这种开场短语单独成一个镜头太碎
+    if len(out) >= 2 and len(out[0]) < min_len:
+        out = [out[0] + out[1]] + out[2:]
+    return out
+
+
 def split_sentences(text: str) -> list[str]:
     """小说正文 → 句子（保留标点，剔除章节标题，合并过短句，长句按逗号断）。"""
     text = re.sub(r"\s*#[^\n]*", "", text)              # 去 Markdown 标题行#
@@ -98,11 +121,11 @@ def split_sentences(text: str) -> list[str]:
             merged.append(s)
     out: list[str] = []
     for s in merged:
-        if len(s) > 70:
-            out += [p + "，" if not p.endswith(("，", "。", "！", "？")) else p
-                    for p in re.split(r"(?<=，)", s)[:4]]
-            rest = re.split(r"(?<=，)", s)[4:]
-            out += rest
+        if len(s) > LONG_SENTENCE:
+            parts = _merge_short([p for p in re.split(r"(?<=，)", s) if p])
+            # 每片都以句读收尾：逗号结尾让 TTS 念到一半就停，听感像话没说完。
+            # 同时保证 split_sentences 的不变式「每句以 。！？ 结尾」始终成立。
+            out += [p[:-1] + "。" if p.endswith("，") else p for p in parts]
         else:
             out.append(s)
     return [s for s in (x.strip() for x in out) if s]

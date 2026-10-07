@@ -6,7 +6,8 @@
 
 **文档导航**：[**Docker 部署**（容器化，CPU/双模）](docs/Docker部署.md) · [部署与出片手册](README_本机部署.md) · [**问题复盘与故障档案（21 个坑的根因与解法）**](README_问题复盘.md) · [故障速查](docs/TROUBLESHOOTING.md) · [更新日志](CHANGELOG.md) · [**优化方案（8 类）**](docs/OPTIMIZATION.md) · [架构](docs/ARCHITECTURE.md) · [管线](docs/PIPELINE.md)
 
-> 本机是 **AMD 核显 + 12 线程 CPU，无可用 GPU 后端**（无 CUDA、无 ROCm、Windows 无 ROCm）。
+> 本机是 **AMD 核显 + 32 线程 CPU，无可用 GPU 后端**（无 CUDA、无 ROCm、Windows 无 ROCm）。
+> 不确定自己机器缺什么，先跑 `python tools/doctor.py`。
 > 直接跑本机流程请看 `README_本机部署.md`；想容器化、或要把管线搬到有 N 卡的机器上，走 `docs/Docker部署.md`。
 > 一键部署脚本：`deploy-docker.bat`（自动装 Docker Desktop + WSL2 + 构建 + 启动）。
 
@@ -75,8 +76,8 @@ python scripts\shoot.py --demo --engine ltx --out output/film_ltx.mp4
 
 | 候选 | 体积 | 结论 |
 |---|---|---|
-| **LTX-Video 2B distilled fp8** | 2.7 GB（+ VAE 1.5 GB + T5 17.3 GB） | **选它**：官方量化、4 步出片、8 秒长镜头、任意宽高比 |
-| LTX-Video 13B distilled fp8 | 15.7 GB | 排除：13B 参数在 12 线程 CPU 上一帧都出不来 |
+| **LTX-Video 2B distilled fp8** | 4.2 GB（+ VAE 1.6 GB + T5 17.8 GB） | **选它**：官方量化、4 步出片、8 秒长镜头、任意宽高比 |
+| LTX-Video 13B distilled fp8 | 15.7 GB | 排除：13B 参数在 32 线程 CPU 上一帧都出不来 |
 | Wan2.2-TI2V-5B fp8 | ≈10 GB | 待定：社区量化版在 hf-mirror 无缓存可查，落地风险高 |
 | SVD-XT fp16 | ≈4 GB | 备选：只出 14 帧（0.5 秒），适合验证链路，不适合成片 |
 
@@ -85,7 +86,7 @@ python scripts\shoot.py --demo --engine ltx --out output/film_ltx.mp4
 所以实际只能 CPU 推理，diffusers 会自动把 fp8 权重上转成 fp32 计算，画质等同 fp16 版。
 想让 fp8 真正吃加速，必须换有 N 卡的机器。
 
-> 总成本约 **21.5 GB**（fp8 transformer 2.7 GB + VAE 1.5 GB + T5-v1_1-xxl 文本编码器 17.3 GB）。
+> 总成本约 **23.5 GB**（fp8 transformer 4.2 GB + VAE 1.6 GB + T5-v1_1-xxl 文本编码器 17.8 GB）。
 > T5 是大头，一次下载后本地缓存复用，之后换 prompt 不再重复拉。
 
 ### 权重下载（hf-mirror，直连 HF 会被墙）
@@ -93,9 +94,9 @@ python scripts\shoot.py --demo --engine ltx --out output/film_ltx.mp4
 ```bat
 set HF_ENDPOINT=https://hf-mirror.com
 :: 三个组件，放到项目根的 models/ltx/
-::   1) Lightricks/LTX-Video → ltxv-2b-0.9.8-distilled-fp8.safetensors   (2.7 GB)
+::   1) Lightricks/LTX-Video → ltxv-2b-0.9.8-distilled-fp8.safetensors   (4.2 GB)
 ::   2) Lightricks/LTX-Video → vae/diffusion_pytorch_model.safetensors    (1.5 GB)
-::   3) Lightricks/LTX-Video → text_encoder/model-0000{1..4}-of-00004.safetensors (17.3 GB)
+::   3) Lightricks/LTX-Video → text_encoder/model-0000{1..4}-of-00004.safetensors (17.8 GB)
 ```
 
 `curl -C -` 可断点续传，下到一半断掉直接重跑同一条命令即可。
@@ -118,13 +119,32 @@ python tools\verify_ltx_weights.py --render   :: 再真跑 4 帧，确认出片�
 |---|---|---|
 | `LTX_MODEL_DIR` | `models/ltx` | 本地权重目录，留空则回落到 HF 仓库名 |
 | `LTX_STEPS` | `4` | 采样步数。distilled 权重 4 步就够，调大只会变慢 |
-| `LTX_WIDTH` / `LTX_HEIGHT` | `512 / 768` | 出图尺寸，按 16 对齐 |
+| `LTX_WIDTH` / `LTX_HEIGHT` | `512 / 768` | 出图尺寸，**必须能被 32 整除**（512×288 / 768×448 / 1024×576 / 1280×704 都可以，768×432 会直接报错） |
 | `LTX_FPS` | `24` | 输出帧率 |
 | `LTX_MAX_FRAMES` | `192` | 单镜头最长帧数（约 8 秒） |
 | `LTX_GUIDANCE` | `3.0` | guidance scale |
 
-**性能预期**：CPU 上一个镜头（512×768 / 96 帧）约 3–8 分钟。
+**性能预期（本机 32 线程实测）**：CPU 吞吐约 **120 token/s**，
+token 量 = `(宽/32) × (高/32) × 帧数`。实测：
+
+| 规格 | 帧数 | 实测耗时 |
+|---|---|---|
+| 256×256 | 9 | 16 s |
+| 512×288 | 192 | 3.9 min |
+| 768×448 | 25 | 1.0 min |
+| 1024×576 | 120 | 10–14 min |
+| 1280×704 | 120 | 约 20 min |
+
+一部 5 镜头的片子：1024×576 约 **60 分钟**，1280×704 约 **100 分钟**。
 想快就调小 `--width/--height` 和镜头时长，或者填云端 key 走 `--engine cloud`。
+
+> ⚠️ **长任务必读**：引擎出完一个镜头会清理上百个中间帧 PNG，
+> 若环境里有 safe-delete 钩子，会因「一次删除 ≥50 个文件」把进程杀掉，
+> **白跑十几分钟**。跑之前先：
+> ```bash
+> export CODEBUDDY_SAFE_DELETE_ENABLED=0    # Linux/macOS/Git Bash
+> set CODEBUDDY_SAFE_DELETE_ENABLED=0       # Windows cmd
+> ```
 
 引擎优先级：**cloud（填 key）→ ltx（本地模型，需权重）→ quickcut（永远可用）**。
 
@@ -191,6 +211,16 @@ python scripts\shoot.py --demo --engine h3ref :: 参考图
 
 ```bash
 pip install -r requirements.txt
+```
+
+只需要 QuickCut / 云端路线的话，到这里就够了。
+要用本地 LTX 模型（`--engine ltx`）再补两步——`torch` 必须走官方 CPU 索引，
+否则默认源会拉 2 GB+ 的 CUDA 版：
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-ltx.txt
+python tools/doctor.py        # 验证缺什么
 ```
 
 ### 2. 启动 ComfyUI（**必须低显存**）
@@ -307,8 +337,11 @@ novel-to-video-codex/
 | StepFun `402 exceeded quota` | Step Plan Key 走错端点，设 `STEPFUN_BASE_URL` |
 | StepFun `401 invalid_api_key` | Key 填错/过期（已自动回退 Edge，出片不中断） |
 | 进程莫名退出、日志有 SystemExit | safe-delete 钩子，启动脚本需 `CODEBUDDY_SAFE_DELETE_ENABLED=0` |
+| LTX 出片跑到第 2 个镜头就中断 | 同上：清理上百个中间帧 PNG 触发 safe-delete 批量确认（阈值 50），非交互下直接杀进程 |
 | httpx 报 `[Errno 22]` | 系统代理残留（Clash 未开），`set HTTP_PROXY=` 清空 |
 | T5 报 `fp8 scaled is not supported` | text_encoders 放的是 Comfy-Org repackaged 版，换 Kijai 版 |
+| `ValueError: Invalid voice '晓晓'` | 已修复：音色别名统一走 `engines/tts.py::resolve_voice()`（旧版只在读环境变量时映射） |
+| `height and width have to be divisible by 32` | 尺寸必须是 32 的倍数，768×432 不行，用 768×448 / 1024×576 / 1280×704 |
 
 ---
 

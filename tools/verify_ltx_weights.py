@@ -20,7 +20,8 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MODEL_DIR = ROOT.parent / "models" / "ltx"
+# 与 engines/video_local.py 的 LOCAL_MODEL_DIR 保持一致：仓库根/models/ltx
+MODEL_DIR = ROOT / "models" / "ltx"
 SINGLE_NAME = "ltxv-2b-0.9.8-distilled-fp8.safetensors"
 MIN_SINGLE_MB = 3800.0  # 官方 fp8 主权重是 4.155 GB，下残会明显偏小
 

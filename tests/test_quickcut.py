@@ -66,6 +66,26 @@ def test_split_sentences_merges_short_and_keeps_punctuation():
     assert not any("第一章" in s for s in sents)
 
 
+def test_split_sentences_long_sentence_not_shredded():
+    """回归：逗号密集的长句曾被打成 6~8 字碎片，配音念得极碎。
+
+    历史行为：
+        「外面不是楼层，」「而是一间他没有见过的办公室——同样的工位，」
+        「同样的台灯，」「唯一的区别是，」…
+    现在应当合并成 2~3 个能连读的意群，且每句仍以句读结尾。
+    """
+    text = ("外面不是楼层，而是一间他没有见过的办公室——同样的工位，同样的台灯，"
+            "唯一的区别是，那张椅子上坐着另一个林默，正抬头看他，"
+            "笑了一下说：你终于加班到这么晚了。")
+    sents = shoot.split_sentences(text)
+    assert sents, "应切出句子"
+    assert all(s.endswith(("。", "！", "？")) for s in sents), sents
+    # 不应再出现「同样的台灯。」这种极短碎片
+    assert all(len(s) >= 14 for s in sents), [s for s in sents]
+    # 也不该退化成「整段不切」
+    assert len(sents) >= 2, sents
+
+
 def test_plan_from_text_respects_max_scenes():
     text = "。" .join(f"第{i}句内容够长了需要单独成镜头" for i in range(10))
     scenes = shoot.plan_from_text(text, max_scenes=3)

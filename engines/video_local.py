@@ -53,7 +53,9 @@ FFMPEG = resolve_ffmpeg() or "ffmpeg"
 DEFAULT_MODEL_REPO = os.environ.get("LTX_MODEL_REPO", "Lightricks/LTX-Video")
 DEFAULT_MODEL_DIR = os.environ.get("LTX_MODEL_DIR", "")
 # 项目根下的本地权重目录（手工用 hf-mirror 拉的那份 fp8，避免重复下载）
-LOCAL_MODEL_DIR = Path(__file__).resolve().parent.parent.parent / "models" / "ltx"
+# 注意：必须是「仓库根/models/ltx」，与 README 一致。以前这里多写了一层 .parent，
+# 指向仓库的上一级目录，导致按 README 放权重却永远找不到，只能靠 LTX_MODEL_DIR 兜。
+LOCAL_MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "ltx"
 DEFAULT_STEPS = int(os.environ.get("LTX_STEPS", "4"))          # distilled 默认 4 步
 DEFAULT_WIDTH = int(os.environ.get("LTX_WIDTH", "512"))
 DEFAULT_HEIGHT = int(os.environ.get("LTX_HEIGHT", "768"))      # 2:3 竖屏
@@ -269,9 +271,6 @@ class LTXVideoEngine(BaseEngine):
             return pipe
         except Exception as exc:  # noqa: BLE001
             print(f"[ltx] 手工组装失败：{exc}", flush=True)
-            return None
-        except Exception as exc:  # noqa: BLE001
-            print(f"[ltx] 单文件加载失败，回落到报错：{exc}", flush=True)
             return None
 
     # ─── 生成 ──────────────────────────────────────────────

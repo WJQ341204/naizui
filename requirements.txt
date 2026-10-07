@@ -27,9 +27,16 @@ fal-client>=0.4.0         # fal.ai 系列 provider
 google-genai>=1.0.0       # Veo 3
 openai>=1.40.0            # Grok / 兼容路由
 # opencv-python>=4.9.0   # 画面质量分析（cv2）
-# torch / diffusers / peft / safetensors / huggingface_hub   # CosyVoice2 / LoRA 训练
 # insightface / onnxruntime-gpu                              # FaceID 角色一致性
 # psutil / pystray / pywebview                               # 桌面启动器
+#
+# ─── 本地模型推理（--engine ltx）───
+# torch / diffusers / transformers 等**故意不写进本文件**：torch 必须走官方 CPU 索引
+# （默认源会拉 2GB+ 的 CUDA 版），且 QuickCut / 云端路线完全用不到它们。
+# 需要本地出片时装这两步：
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+#     pip install -r requirements-ltx.txt
+# 或者直接跑 `python tools/doctor.py` 看缺什么。
 
 # ─── 可选：Kokoro 本地 TTS ───
 # kokoro-onnx / soundfile

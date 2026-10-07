@@ -1,0 +1,19 @@
+# LTX-Video 本地推理（python scripts/shoot.py --engine ltx）的额外依赖。
+#
+# ⚠️ torch 不在这个文件里 —— 默认 PyPI 源给的是 CUDA 版（2 GB+，本机用不上）。
+#    必须先单独装 CPU 版，再装本文件剩下的部分：
+#
+#       pip install torch --index-url https://download.pytorch.org/whl/cpu
+#       pip install -r requirements-ltx.txt
+#
+# 装完用 `python tools/doctor.py` 验证。
+# 本机实测（Windows / 32 线程 / 无 GPU）：diffusers 0.41 + transformers 5.18 可用。
+
+diffusers>=0.35        # LTXImageToVideoPipeline / LTXPipeline / LTXVideoTransformer3DModel
+transformers>=4.46     # T5EncoderModel / T5TokenizerFast
+safetensors>=0.4.5     # 读 fp8 单文件权重
+accelerate>=1.0        # 权重分片加载（T5 有 4 个分片）
+sentencepiece>=0.2.0   # T5 tokenizer；缺了会回落 TikToken 并解析 spiece.model 失败
+protobuf>=4.25         # sentencepiece 的依赖，缺了同样加载不了 tokenizer
+imageio>=2.34          # export_to_video 的推荐后端（否则走已废弃的 OpenCV 后端）
+imageio-ffmpeg>=0.4.9  # imageio 的 ffmpeg 插件
